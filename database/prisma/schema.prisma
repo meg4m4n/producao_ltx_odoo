@@ -6,3 +6,98 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum ServiceStage {
+  planning
+  cutting
+  services
+  sewing
+  finishing
+}
+
+enum ProductionState {
+  draft
+  planned
+  in_production
+  issue
+  produced
+  invoiced
+  shipped
+}
+
+enum Severity {
+  low
+  medium
+  high
+}
+
+model production_orders {
+  id                       String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                     String                  @unique
+  sale_ref                 String?
+  customer_name            String?
+  service_current          ServiceStage            @default(planning)
+  state                    ProductionState         @default(draft)
+  date_order               DateTime?
+  date_delivery_requested  DateTime?
+  date_start_plan          DateTime?
+  date_end_estimated       DateTime?
+  created_at               DateTime                @default(now())
+  updated_at               DateTime                @updatedAt
+
+  production_order_lines   production_order_lines[]
+  production_anomalies     production_anomalies[]
+}
+
+model production_order_lines {
+  id                    String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  production_order_id   String                      @db.Uuid
+  seq                   Int
+  code                  String
+  article_ref           String
+  color                 String?
+  qty_ordered           Int                         @default(0)
+  qty_to_produce        Int                         @default(0)
+  qty_produced          Int                         @default(0)
+  qty_defect            Int                         @default(0)
+  service_current       ServiceStage                @default(planning)
+  state                 ProductionState             @default(draft)
+  created_at            DateTime                    @default(now())
+  updated_at            DateTime                    @updatedAt
+
+  production_order      production_orders           @relation(fields: [production_order_id], references: [id], onDelete: Cascade)
+  line_sizes            production_order_line_sizes[]
+  production_anomalies  production_anomalies[]
+
+  @@unique([production_order_id, seq])
+}
+
+model production_order_line_sizes {
+  id                      String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  production_order_line_id String                 @db.Uuid
+  size                    String
+  qty_ordered             Int                     @default(0)
+  qty_to_produce          Int                     @default(0)
+  qty_produced            Int                     @default(0)
+  qty_defect              Int                     @default(0)
+
+  production_order_line   production_order_lines  @relation(fields: [production_order_line_id], references: [id], onDelete: Cascade)
+
+  @@unique([production_order_line_id, size])
+}
+
+model production_anomalies {
+  id                      String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  production_order_id     String?                 @db.Uuid
+  production_order_line_id String?                @db.Uuid
+  service                 ServiceStage
+  severity                Severity
+  description             String                  @db.Text
+  is_blocking             Boolean                 @default(false)
+  resolved                Boolean                 @default(false)
+  created_at              DateTime                @default(now())
+  updated_at              DateTime                @updatedAt
+
+  production_order        production_orders?      @relation(fields: [production_order_id], references: [id], onDelete: SetNull)
+  production_order_line   production_order_lines? @relation(fields: [production_order_line_id], references: [id], onDelete: SetNull)
+}
