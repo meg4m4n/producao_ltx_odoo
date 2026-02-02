@@ -1,0 +1,18 @@
+{
+  "name": "production-module",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "database"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=api",
+    "dev:web": "npm run dev --workspace=web",
+    "build:web": "npm run build --workspace=web",
+    "db:generate": "npm run db:generate --workspace=database",
+    "db:migrate": "npm run db:migrate --workspace=database",
+    "db:studio": "npm run db:studio --workspace=database"
+  }
+}
