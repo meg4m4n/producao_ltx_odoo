@@ -101,3 +101,28 @@ model production_anomalies {
   production_order        production_orders?      @relation(fields: [production_order_id], references: [id], onDelete: SetNull)
   production_order_line   production_order_lines? @relation(fields: [production_order_line_id], references: [id], onDelete: SetNull)
 }
+
+model sales_orders {
+  id                      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                    String              @unique
+  customer_name           String?
+  date_order              DateTime?
+  date_delivery_requested DateTime?
+  created_at              DateTime            @default(now())
+  updated_at              DateTime            @updatedAt
+
+  sales_order_lines       sales_order_lines[]
+}
+
+model sales_order_lines {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sales_order_id  String        @db.Uuid
+  article_ref     String
+  color           String?
+  size            String
+  qty             Int           @default(0)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  sales_order     sales_orders  @relation(fields: [sales_order_id], references: [id], onDelete: Cascade)
+}

@@ -127,3 +127,54 @@ export interface UpdateAnomalyData {
   is_blocking?: boolean;
   resolved?: boolean;
 }
+
+export interface SalesOrderLine {
+  id: string;
+  sales_order_id: string;
+  article_ref: string;
+  color: string | null;
+  size: string;
+  qty: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesOrder {
+  id: string;
+  code: string;
+  customer_name: string | null;
+  date_order: string | null;
+  date_delivery_requested: string | null;
+  created_at: string;
+  updated_at: string;
+  sales_order_lines?: SalesOrderLine[];
+}
+
+export interface CreateSalesOrderData {
+  code: string;
+  customer_name?: string;
+  date_order?: string;
+  date_delivery_requested?: string;
+  lines?: CreateSalesOrderLineData[];
+}
+
+export interface UpdateSalesOrderData {
+  code?: string;
+  customer_name?: string;
+  date_order?: string;
+  date_delivery_requested?: string;
+}
+
+export interface CreateSalesOrderLineData {
+  article_ref: string;
+  color?: string;
+  size: string;
+  qty?: number;
+}
+
+export interface UpdateSalesOrderLineData {
+  article_ref?: string;
+  color?: string;
+  size?: string;
+  qty?: number;
+}

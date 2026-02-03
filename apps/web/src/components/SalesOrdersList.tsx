@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ProductionOrder, ProductionState, SalesOrder } from '../types';
-import { fetchProductionOrders, createProductionOrder, fetchSalesOrders } from '../api';
+import { SalesOrder } from '../types';
+import { fetchSalesOrders, createSalesOrder } from '../api';
 
-export default function ProductionOrdersList() {
-  const [orders, setOrders] = useState<ProductionOrder[]>([]);
+export default function SalesOrdersList() {
+  const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterState, setFilterState] = useState<ProductionState | ''>('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const navigate = useNavigate();
 
@@ -18,7 +18,7 @@ export default function ProductionOrdersList() {
   async function loadOrders() {
     try {
       setLoading(true);
-      const data = await fetchProductionOrders();
+      const data = await fetchSalesOrders();
       setOrders(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load orders');
@@ -27,24 +27,22 @@ export default function ProductionOrdersList() {
     }
   }
 
-  function getRowClassName(state: ProductionState) {
-    if (state === 'issue') {
-      return 'bg-red-50 hover:bg-red-100 cursor-pointer';
+  async function handleSearch() {
+    try {
+      setLoading(true);
+      const data = await fetchSalesOrders(searchQuery);
+      setOrders(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search orders');
+    } finally {
+      setLoading(false);
     }
-    if (['produced', 'invoiced', 'shipped'].includes(state)) {
-      return 'bg-green-50 hover:bg-green-100 cursor-pointer';
-    }
-    return 'hover:bg-gray-50 cursor-pointer';
   }
 
   function formatDate(dateString: string | null) {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString();
   }
-
-  const filteredOrders = filterState
-    ? orders.filter(order => order.state === filterState)
-    : orders;
 
   if (loading) {
     return (
@@ -74,39 +72,49 @@ export default function ProductionOrdersList() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Production Orders</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Sales Orders</h1>
           <div className="flex space-x-3">
             <button
-              onClick={() => navigate('/sales')}
+              onClick={() => navigate('/production')}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
             >
-              View Sales
+              View Production
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
             >
-              Create Production Order
+              Create Sales Order
             </button>
           </div>
         </div>
 
-        <div className="mb-4">
-          <label className="text-sm text-gray-600 mr-2">Filter by state:</label>
-          <select
-            value={filterState}
-            onChange={(e) => setFilterState(e.target.value as ProductionState | '')}
-            className="px-3 py-1 border border-gray-300 rounded"
+        <div className="mb-4 flex space-x-2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="Search by code or customer..."
+            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+          />
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
           >
-            <option value="">All</option>
-            <option value="draft">Draft</option>
-            <option value="planned">Planned</option>
-            <option value="in_production">In Production</option>
-            <option value="issue">Issue</option>
-            <option value="produced">Produced</option>
-            <option value="invoiced">Invoiced</option>
-            <option value="shipped">Shipped</option>
-          </select>
+            Search
+          </button>
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                loadOrders();
+              }}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -114,19 +122,13 @@ export default function ProductionOrdersList() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  OF Code
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Sale Ref
+                  Code
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Service
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  State
+                  Order Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Delivery Requested
@@ -137,39 +139,27 @@ export default function ProductionOrdersList() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOrders.length === 0 ? (
+              {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
-                    No production orders found
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                    No sales orders found
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((order) => (
+                orders.map((order) => (
                   <tr
                     key={order.id}
-                    onClick={() => navigate(`/production/${order.id}`)}
-                    className={getRowClassName(order.state)}
+                    onClick={() => navigate(`/sales/${order.id}`)}
+                    className="hover:bg-gray-50 cursor-pointer"
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {order.code}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.sale_ref || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {order.customer_name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.service_current}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        order.state === 'issue' ? 'bg-red-100 text-red-800' :
-                        ['produced', 'invoiced', 'shipped'].includes(order.state) ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {order.state}
-                      </span>
+                      {formatDate(order.date_order)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {formatDate(order.date_delivery_requested)}
@@ -190,7 +180,7 @@ export default function ProductionOrdersList() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={(order) => {
             setShowCreateModal(false);
-            navigate(`/production/${order.id}`);
+            navigate(`/sales/${order.id}`);
           }}
         />
       )}
@@ -200,76 +190,30 @@ export default function ProductionOrdersList() {
 
 function CreateOrderModal({ onClose, onSuccess }: {
   onClose: () => void;
-  onSuccess: (order: ProductionOrder) => void;
+  onSuccess: (order: SalesOrder) => void;
 }) {
   const [code, setCode] = useState('');
-  const [saleRef, setSaleRef] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [dateOrder, setDateOrder] = useState('');
   const [dateDeliveryRequested, setDateDeliveryRequested] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-  const [loadingSales, setLoadingSales] = useState(true);
-  const [selectedSalesOrderId, setSelectedSalesOrderId] = useState('');
-
-  useEffect(() => {
-    loadSalesOrders();
-  }, []);
-
-  async function loadSalesOrders() {
-    try {
-      setLoadingSales(true);
-      const data = await fetchSalesOrders();
-      setSalesOrders(data);
-    } catch (err) {
-      console.error('Failed to load sales orders:', err);
-    } finally {
-      setLoadingSales(false);
-    }
-  }
-
-  function suggestOFCode(salesCode: string): string {
-    const match = salesCode.match(/\d+/);
-    if (match) {
-      return `OF${match[0]}`;
-    }
-    return '';
-  }
-
-  function handleSalesOrderSelect(salesOrderId: string) {
-    setSelectedSalesOrderId(salesOrderId);
-
-    const selectedOrder = salesOrders.find(o => o.id === salesOrderId);
-    if (selectedOrder) {
-      setSaleRef(selectedOrder.code);
-      setCustomerName(selectedOrder.customer_name || '');
-      setDateOrder(selectedOrder.date_order ? new Date(selectedOrder.date_order).toISOString().split('T')[0] : '');
-      setDateDeliveryRequested(selectedOrder.date_delivery_requested ? new Date(selectedOrder.date_delivery_requested).toISOString().split('T')[0] : '');
-
-      const suggested = suggestOFCode(selectedOrder.code);
-      if (suggested) {
-        setCode(suggested);
-      }
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
     if (!code.trim()) {
-      setError('OF code is required');
+      setError('Code is required');
       return;
     }
 
     try {
       setSubmitting(true);
-      const order = await createProductionOrder({
+      const order = await createSalesOrder({
         code: code.trim(),
-        sale_ref: saleRef.trim() || undefined,
         customer_name: customerName.trim() || undefined,
+        date_order: dateOrder || undefined,
         date_delivery_requested: dateDeliveryRequested || undefined,
       });
       onSuccess(order);
@@ -282,62 +226,22 @@ function CreateOrderModal({ onClose, onSuccess }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Create Production Order</h2>
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Create Sales Order</h2>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Link to Sales Order (optional)
-              </label>
-              {loadingSales ? (
-                <p className="text-sm text-gray-500">Loading sales orders...</p>
-              ) : (
-                <select
-                  value={selectedSalesOrderId}
-                  onChange={(e) => handleSalesOrderSelect(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                >
-                  <option value="">-- Select a sales order --</option>
-                  {salesOrders.map((so) => (
-                    <option key={so.id} value={so.id}>
-                      {so.code} {so.customer_name ? `- ${so.customer_name}` : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {selectedSalesOrderId && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Fields below have been auto-filled from the selected sales order
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                OF Code *
+                Code *
               </label>
               <input
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                placeholder="e.g., OF0187"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sale Reference
-              </label>
-              <input
-                type="text"
-                value={saleRef}
-                onChange={(e) => setSaleRef(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
                 placeholder="e.g., S0187"
+                required
               />
             </div>
 
@@ -351,6 +255,18 @@ function CreateOrderModal({ onClose, onSuccess }: {
                 onChange={(e) => setCustomerName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
                 placeholder="e.g., ABC Manufacturing"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Order Date
+              </label>
+              <input
+                type="date"
+                value={dateOrder}
+                onChange={(e) => setDateOrder(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
               />
             </div>
 

@@ -751,6 +751,244 @@ app.delete('/api/anomalies/:id', async (req, res) => {
   }
 });
 
+app.post('/api/sales-orders', async (req, res) => {
+  try {
+    const {
+      code,
+      customer_name,
+      date_order,
+      date_delivery_requested,
+      lines
+    } = req.body;
+
+    if (!code) {
+      return res.status(400).json({ error: 'code is required' });
+    }
+
+    const salesOrderData = {
+      code,
+      customer_name: customer_name || null,
+      date_order: date_order ? new Date(date_order) : null,
+      date_delivery_requested: date_delivery_requested ? new Date(date_delivery_requested) : null
+    };
+
+    if (lines && Array.isArray(lines) && lines.length > 0) {
+      salesOrderData.sales_order_lines = {
+        create: lines.map(line => ({
+          article_ref: line.article_ref,
+          color: line.color || null,
+          size: line.size,
+          qty: line.qty || 0
+        }))
+      };
+    }
+
+    const salesOrder = await prisma.sales_orders.create({
+      data: salesOrderData,
+      include: {
+        sales_order_lines: true
+      }
+    });
+
+    res.status(201).json(salesOrder);
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Sales order code already exists' });
+    }
+    console.error('Error creating sales order:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/sales-orders', async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    const where = {};
+
+    if (q) {
+      where.OR = [
+        { code: { contains: q, mode: 'insensitive' } },
+        { customer_name: { contains: q, mode: 'insensitive' } }
+      ];
+    }
+
+    const salesOrders = await prisma.sales_orders.findMany({
+      where,
+      orderBy: { updated_at: 'desc' }
+    });
+
+    res.json(salesOrders);
+  } catch (error) {
+    console.error('Error fetching sales orders:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/sales-orders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const salesOrder = await prisma.sales_orders.findUnique({
+      where: { id },
+      include: {
+        sales_order_lines: {
+          orderBy: [
+            { article_ref: 'asc' },
+            { color: 'asc' },
+            { size: 'asc' }
+          ]
+        }
+      }
+    });
+
+    if (!salesOrder) {
+      return res.status(404).json({ error: 'Sales order not found' });
+    }
+
+    res.json(salesOrder);
+  } catch (error) {
+    console.error('Error fetching sales order:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/sales-orders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      code,
+      customer_name,
+      date_order,
+      date_delivery_requested
+    } = req.body;
+
+    const data = {};
+
+    if (code !== undefined) data.code = code;
+    if (customer_name !== undefined) data.customer_name = customer_name;
+    if (date_order !== undefined) data.date_order = date_order ? new Date(date_order) : null;
+    if (date_delivery_requested !== undefined) data.date_delivery_requested = date_delivery_requested ? new Date(date_delivery_requested) : null;
+
+    const salesOrder = await prisma.sales_orders.update({
+      where: { id },
+      data
+    });
+
+    res.json(salesOrder);
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Sales order not found' });
+    }
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Sales order code already exists' });
+    }
+    console.error('Error updating sales order:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/sales-orders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.sales_orders.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Sales order not found' });
+    }
+    console.error('Error deleting sales order:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/sales-orders/:id/lines', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { article_ref, color, size, qty = 0 } = req.body;
+
+    if (!article_ref) {
+      return res.status(400).json({ error: 'article_ref is required' });
+    }
+
+    if (!size) {
+      return res.status(400).json({ error: 'size is required' });
+    }
+
+    const salesOrder = await prisma.sales_orders.findUnique({
+      where: { id }
+    });
+
+    if (!salesOrder) {
+      return res.status(404).json({ error: 'Sales order not found' });
+    }
+
+    const line = await prisma.sales_order_lines.create({
+      data: {
+        sales_order_id: id,
+        article_ref,
+        color: color || null,
+        size,
+        qty
+      }
+    });
+
+    res.status(201).json(line);
+  } catch (error) {
+    console.error('Error creating sales order line:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/sales-order-lines/:lineId', async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    const { article_ref, color, size, qty } = req.body;
+
+    const data = {};
+
+    if (article_ref !== undefined) data.article_ref = article_ref;
+    if (color !== undefined) data.color = color;
+    if (size !== undefined) data.size = size;
+    if (qty !== undefined) data.qty = qty;
+
+    const line = await prisma.sales_order_lines.update({
+      where: { id: lineId },
+      data
+    });
+
+    res.json(line);
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Sales order line not found' });
+    }
+    console.error('Error updating sales order line:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/sales-order-lines/:lineId', async (req, res) => {
+  try {
+    const { lineId } = req.params;
+
+    await prisma.sales_order_lines.delete({
+      where: { id: lineId }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Sales order line not found' });
+    }
+    console.error('Error deleting sales order line:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`API server running on port ${PORT}`);
 });

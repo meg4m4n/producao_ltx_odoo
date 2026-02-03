@@ -10,7 +10,13 @@ import {
   UpdateSizeData,
   ProductionAnomaly,
   CreateAnomalyData,
-  UpdateAnomalyData
+  UpdateAnomalyData,
+  SalesOrder,
+  CreateSalesOrderData,
+  UpdateSalesOrderData,
+  SalesOrderLine,
+  CreateSalesOrderLineData,
+  UpdateSalesOrderLineData
 } from './types';
 
 const API_BASE_URL = 'http://localhost:3001';
@@ -205,5 +211,116 @@ export async function deleteAnomaly(id: string): Promise<void> {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to delete anomaly');
+  }
+}
+
+export async function fetchSalesOrders(q?: string): Promise<SalesOrder[]> {
+  const url = new URL(`${API_BASE_URL}/api/sales-orders`);
+  if (q) {
+    url.searchParams.append('q', q);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error('Failed to fetch sales orders');
+  }
+  return response.json();
+}
+
+export async function fetchSalesOrder(id: string): Promise<SalesOrder> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-orders/${id}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sales order');
+  }
+  return response.json();
+}
+
+export async function createSalesOrder(data: CreateSalesOrderData): Promise<SalesOrder> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-orders`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create sales order');
+  }
+
+  return response.json();
+}
+
+export async function updateSalesOrder(id: string, data: UpdateSalesOrderData): Promise<SalesOrder> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-orders/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update sales order');
+  }
+
+  return response.json();
+}
+
+export async function deleteSalesOrder(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-orders/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete sales order');
+  }
+}
+
+export async function createSalesOrderLine(orderId: string, data: CreateSalesOrderLineData): Promise<SalesOrderLine> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-orders/${orderId}/lines`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create sales order line');
+  }
+
+  return response.json();
+}
+
+export async function updateSalesOrderLine(lineId: string, data: UpdateSalesOrderLineData): Promise<SalesOrderLine> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-order-lines/${lineId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update sales order line');
+  }
+
+  return response.json();
+}
+
+export async function deleteSalesOrderLine(lineId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/sales-order-lines/${lineId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete sales order line');
   }
 }

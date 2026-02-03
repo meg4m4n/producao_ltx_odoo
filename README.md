@@ -4,7 +4,7 @@
 
 This is a production and manufacturing order (OF) management system designed to integrate with Odoo 14 CE logic. Currently, this is a standalone foundation setup that will later be connected to Odoo.
 
-**Current Status:** Slice 2A - Basic UI for Production Orders
+**Current Status:** Slice 3A - Sales Orders CRUD + Link to Production
 
 ## Project Structure
 
@@ -81,6 +81,27 @@ The web application will be available at `http://localhost:5173`
 
 ## Features
 
+### Sales Orders Management
+
+- **List View** (`/sales`):
+  - Table displaying all sales orders
+  - Search by code or customer name
+  - Click any row to view details
+  - Navigate to production orders view
+
+- **Create Order**:
+  - Modal form accessible from list view
+  - Required field: code (e.g., S0187)
+  - Optional fields: customer name, order date, delivery requested date
+  - Automatic redirect to detail view after creation
+
+- **Detail View** (`/sales/:id`):
+  - Display all order header information
+  - Edit order details
+  - Add, edit, and delete order lines (article ref, color, size, qty)
+  - Lines are per size (matching business reality)
+  - Navigate back to list view
+
 ### Production Orders Management
 
 - **List View** (`/production`):
@@ -90,9 +111,13 @@ The web application will be available at `http://localhost:5173`
     - Green highlight for completed orders (`produced`, `invoiced`, `shipped`)
   - Client-side filtering by state
   - Click any row to view details
+  - Navigate to sales orders view
 
 - **Create Order**:
   - Modal form accessible from list view
+  - **Link to Sales Order**: Optional dropdown to select a sales order
+    - Auto-fills sale_ref, customer_name, and dates from selected sales order
+    - Suggests OF code based on sales code (S0187 → OF0187)
   - Required field: OF code
   - Optional fields: sale reference, customer name, delivery requested date
   - Automatic redirect to detail view after creation
@@ -122,18 +147,22 @@ See `docs/curl.md` for comprehensive API usage examples.
 
 ## Development Notes
 
-- **Slice 2A (Current):** Basic UI for production orders
-  - List view with state-based visual indicators
-  - Create new production orders
-  - View and edit production order details
-  - Client-side state filtering
+- **Slice 3A (Current):** Sales Orders CRUD + Link to Production
+  - Full CRUD for sales orders and their lines
+  - Sales order lines are per size (article_ref, color, size, qty)
+  - Production orders can link to sales orders on creation
+  - Auto-fill production order fields from selected sales order
+  - Auto-suggest OF code based on sales code (S0187 → OF0187)
+  - No production line import from sales yet (coming in future slice)
 
 - **Completed:**
   - Step 0: Foundation setup
   - Step 1: Database schema and API endpoints for production orders, lines, sizes, and anomalies
   - Slice 2A: Minimal UI for production order management
+  - Slice 3A: Sales Orders CRUD and link to production
 
 - **Next Steps:**
+  - Implement import wizard to create production lines from sales lines
   - Add UI for managing production order lines
   - Add UI for managing sizes
   - Add UI for anomaly tracking
@@ -141,6 +170,7 @@ See `docs/curl.md` for comprehensive API usage examples.
 
 - No authentication implemented yet
 - Minimal design and styling (functional focus)
+- No production line import wizard yet
 
 ## Future Integration
 
