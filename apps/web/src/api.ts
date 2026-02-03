@@ -324,3 +324,19 @@ export async function deleteSalesOrderLine(lineId: string): Promise<void> {
     throw new Error(error.error || 'Failed to delete sales order line');
   }
 }
+
+export async function importSalesLines(productionOrderId: string): Promise<{ created_lines: number; details: any[] }> {
+  const response = await fetch(`${API_BASE_URL}/api/production-orders/${productionOrderId}/import-sales`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to import sales lines');
+  }
+
+  return response.json();
+}

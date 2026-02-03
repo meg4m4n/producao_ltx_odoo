@@ -21,7 +21,8 @@ import {
   deleteLineSize,
   createAnomaly,
   updateAnomaly,
-  deleteAnomaly
+  deleteAnomaly,
+  importSalesLines
 } from '../api';
 
 export default function ProductionOrderDetail() {
@@ -34,6 +35,8 @@ export default function ProductionOrderDetail() {
   const [showAddLineModal, setShowAddLineModal] = useState(false);
   const [selectedLine, setSelectedLine] = useState<ProductionOrderLine | null>(null);
   const [showAddAnomalyModal, setShowAddAnomalyModal] = useState(false);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -178,13 +181,29 @@ export default function ProductionOrderDetail() {
         <div className="mt-8">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-gray-900">Lines</h2>
-            <button
-              onClick={() => setShowAddLineModal(true)}
-              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
-            >
-              Add Line
-            </button>
+            <div className="flex space-x-3">
+              {order.sale_ref && (!order.production_order_lines || order.production_order_lines.length === 0) && (
+                <button
+                  onClick={() => setShowImportConfirm(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Importar linhas da SALES
+                </button>
+              )}
+              <button
+                onClick={() => setShowAddLineModal(true)}
+                className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
+              >
+                Add Line
+              </button>
+            </div>
           </div>
+
+          {successMessage && (
+            <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">
+              {successMessage}
+            </div>
+          )}
 
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
@@ -399,6 +418,28 @@ export default function ProductionOrderDetail() {
           onSuccess={() => {
             setShowAddAnomalyModal(false);
             if (id) loadOrder(id);
+          }}
+        />
+      )}
+
+      {showImportConfirm && (
+        <ImportConfirmModal
+          saleRef={order.sale_ref || ''}
+          onClose={() => setShowImportConfirm(false)}
+          onConfirm={async () => {
+            try {
+              setShowImportConfirm(false);
+              setLoading(true);
+              const result = await importSalesLines(order.id);
+              await loadOrder(id!);
+              setSuccessMessage(`Successfully imported ${result.created_lines} line(s) from sales order ${order.sale_ref}`);
+              setTimeout(() => setSuccessMessage(null), 5000);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to import sales lines');
+              setTimeout(() => setError(null), 5000);
+            } finally {
+              setLoading(false);
+            }
           }}
         />
       )}
@@ -1461,6 +1502,44 @@ function EditOrderModal({ order, onClose, onSuccess }: {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function ImportConfirmModal({ saleRef, onClose, onConfirm }: {
+  saleRef: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Import Lines from Sales</h2>
+
+        <p className="text-gray-700 mb-6">
+          This will create production lines from sales order <strong>{saleRef}</strong>.
+          Lines will be grouped by article reference and color, with size grids created automatically.
+        </p>
+
+        <p className="text-sm text-gray-600 mb-6">
+          Continue?
+        </p>
+
+        <div className="flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Import
+          </button>
+        </div>
       </div>
     </div>
   );

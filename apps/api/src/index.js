@@ -570,6 +570,117 @@ app.delete('/api/production-order-line-sizes/:sizeId', async (req, res) => {
   }
 });
 
+app.post('/api/production-orders/:id/import-sales', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const productionOrder = await prisma.production_orders.findUnique({
+      where: { id },
+      include: {
+        production_order_lines: true
+      }
+    });
+
+    if (!productionOrder) {
+      return res.status(404).json({ error: 'Production order not found' });
+    }
+
+    if (!productionOrder.sale_ref) {
+      return res.status(400).json({ error: 'Production order has no sale_ref' });
+    }
+
+    if (productionOrder.production_order_lines.length > 0) {
+      return res.status(409).json({ error: 'Production order already has lines. Clear lines first.' });
+    }
+
+    const salesOrder = await prisma.sales_orders.findFirst({
+      where: { code: productionOrder.sale_ref },
+      include: {
+        sales_order_lines: true
+      }
+    });
+
+    if (!salesOrder) {
+      return res.status(404).json({ error: `Sales order ${productionOrder.sale_ref} not found` });
+    }
+
+    if (!salesOrder.sales_order_lines || salesOrder.sales_order_lines.length === 0) {
+      return res.status(400).json({ error: 'Sales order has no lines to import' });
+    }
+
+    const groups = {};
+    for (const line of salesOrder.sales_order_lines) {
+      const key = `${line.article_ref}|${line.color || ''}`;
+      if (!groups[key]) {
+        groups[key] = {
+          article_ref: line.article_ref,
+          color: line.color,
+          sizes: []
+        };
+      }
+      groups[key].sizes.push({
+        size: line.size,
+        qty: line.qty
+      });
+    }
+
+    const details = [];
+    let seq = 1;
+
+    for (const key of Object.keys(groups).sort()) {
+      const group = groups[key];
+      const totalQty = group.sizes.reduce((sum, s) => sum + s.qty, 0);
+      const lineCode = `${productionOrder.code}.${seq}`;
+
+      const productionLine = await prisma.production_order_lines.create({
+        data: {
+          production_order_id: id,
+          seq: seq,
+          code: lineCode,
+          article_ref: group.article_ref,
+          color: group.color || null,
+          qty_ordered: totalQty,
+          qty_to_produce: totalQty,
+          qty_produced: 0,
+          qty_defect: 0,
+          service_current: 'planning',
+          state: 'draft'
+        }
+      });
+
+      for (const sizeEntry of group.sizes) {
+        await prisma.production_order_line_sizes.create({
+          data: {
+            production_order_line_id: productionLine.id,
+            size: sizeEntry.size,
+            qty_ordered: sizeEntry.qty,
+            qty_to_produce: sizeEntry.qty,
+            qty_produced: 0,
+            qty_defect: 0
+          }
+        });
+      }
+
+      details.push({
+        line_code: lineCode,
+        article_ref: group.article_ref,
+        color: group.color,
+        sizes: group.sizes.map(s => ({ size: s.size, qty: s.qty }))
+      });
+
+      seq++;
+    }
+
+    res.status(201).json({
+      created_lines: details.length,
+      details: details
+    });
+  } catch (error) {
+    console.error('Error importing sales lines:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/api/anomalies', async (req, res) => {
   try {
     const {

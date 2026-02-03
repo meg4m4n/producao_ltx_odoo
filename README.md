@@ -4,7 +4,7 @@
 
 This is a production and manufacturing order (OF) management system designed to integrate with Odoo 14 CE logic. Currently, this is a standalone foundation setup that will later be connected to Odoo.
 
-**Current Status:** Slice 3A - Sales Orders CRUD + Link to Production
+**Current Status:** Slice 3B - Import Production Lines from Sales
 
 ## Project Structure
 
@@ -125,6 +125,12 @@ The web application will be available at `http://localhost:5173`
 - **Detail View** (`/production/:id`):
   - Display all order header information
   - Edit order details (excluding state, which is auto-managed)
+  - **Import Lines from Sales**: If production order has a linked sales order and no lines yet:
+    - Button "Importar linhas da SALES" becomes visible
+    - Click to show confirmation modal
+    - On confirm, automatically creates production lines grouped by (article_ref + color)
+    - Creates size grid entries for each line with quantities from sales
+    - Shows success message with number of lines imported
   - Navigate back to list view
 
 ## Database
@@ -147,30 +153,30 @@ See `docs/curl.md` for comprehensive API usage examples.
 
 ## Development Notes
 
-- **Slice 3A (Current):** Sales Orders CRUD + Link to Production
-  - Full CRUD for sales orders and their lines
-  - Sales order lines are per size (article_ref, color, size, qty)
-  - Production orders can link to sales orders on creation
-  - Auto-fill production order fields from selected sales order
-  - Auto-suggest OF code based on sales code (S0187 → OF0187)
-  - No production line import from sales yet (coming in future slice)
+- **Slice 3B (Current):** Import Production Lines from Sales
+  - One-click import of production lines from linked sales order
+  - Backend endpoint: `POST /api/production-orders/:id/import-sales`
+  - Groups sales lines by (article_ref + color)
+  - Creates production order lines with auto-sequencing (OF0187.1, OF0187.2, ...)
+  - Creates size grid entries per line with quantities
+  - Import blocked if production order already has lines (safety rule)
+  - UI shows confirmation modal before import
+  - Success feedback with number of lines created
 
 - **Completed:**
   - Step 0: Foundation setup
   - Step 1: Database schema and API endpoints for production orders, lines, sizes, and anomalies
   - Slice 2A: Minimal UI for production order management
   - Slice 3A: Sales Orders CRUD and link to production
+  - Slice 3B: Import production lines from sales
 
 - **Next Steps:**
-  - Implement import wizard to create production lines from sales lines
-  - Add UI for managing production order lines
-  - Add UI for managing sizes
+  - Add UI for editing production order lines and sizes
   - Add UI for anomaly tracking
   - Implement authentication
 
 - No authentication implemented yet
 - Minimal design and styling (functional focus)
-- No production line import wizard yet
 
 ## Future Integration
 
