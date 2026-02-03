@@ -1,12 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ProductionOrder, ServiceStage, ProductionState, ProductionOrderLine } from '../types';
+import {
+  ProductionOrder,
+  ServiceStage,
+  ProductionState,
+  ProductionOrderLine,
+  ProductionOrderLineSize,
+  ProductionAnomaly,
+  Severity
+} from '../types';
 import {
   fetchProductionOrder,
   updateProductionOrder,
   createProductionOrderLine,
   updateProductionOrderLine,
-  deleteProductionOrderLine
+  deleteProductionOrderLine,
+  fetchLineSizes,
+  upsertLineSize,
+  updateLineSize,
+  deleteLineSize,
+  createAnomaly,
+  updateAnomaly,
+  deleteAnomaly
 } from '../api';
 
 export default function ProductionOrderDetail() {
@@ -18,6 +33,7 @@ export default function ProductionOrderDetail() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddLineModal, setShowAddLineModal] = useState(false);
   const [selectedLine, setSelectedLine] = useState<ProductionOrderLine | null>(null);
+  const [showAddAnomalyModal, setShowAddAnomalyModal] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -40,6 +56,10 @@ export default function ProductionOrderDetail() {
   function formatDate(dateString: string | null) {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString();
+  }
+
+  function formatDateTime(dateString: string) {
+    return new Date(dateString).toLocaleString();
   }
 
   function getLineRowClassName(state: ProductionState) {
@@ -78,7 +98,7 @@ export default function ProductionOrderDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-6">
           <button
             onClick={() => navigate('/production')}
@@ -88,7 +108,14 @@ export default function ProductionOrderDetail() {
           </button>
 
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Production Order: {order.code}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">Production Order: {order.code}</h1>
+              {order.state === 'issue' && (
+                <span className="px-3 py-1 bg-red-100 text-red-800 text-sm font-medium rounded">
+                  ISSUE
+                </span>
+              )}
+            </div>
             <button
               onClick={() => setShowEditModal(true)}
               className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
@@ -212,6 +239,120 @@ export default function ProductionOrderDetail() {
             </table>
           </div>
         </div>
+
+        <div className="mt-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Anomalies</h2>
+            <button
+              onClick={() => setShowAddAnomalyModal(true)}
+              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
+            >
+              Add Anomaly
+            </button>
+          </div>
+
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {!order.anomalies || order.anomalies.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                      No anomalies recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  order.anomalies.map((anomaly) => {
+                    const targetLine = anomaly.production_order_line_id
+                      ? order.production_order_lines?.find(l => l.id === anomaly.production_order_line_id)
+                      : null;
+                    const isBlocking = anomaly.is_blocking && !anomaly.resolved;
+
+                    return (
+                      <tr key={anomaly.id} className={isBlocking ? 'bg-red-50' : ''}>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {targetLine ? `Line ${targetLine.code}` : 'Order'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{anomaly.service}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            anomaly.severity === 'high' ? 'bg-red-100 text-red-800' :
+                            anomaly.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {anomaly.severity}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{anomaly.description}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex flex-col gap-1">
+                            {anomaly.is_blocking && (
+                              <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded">
+                                BLOCKING
+                              </span>
+                            )}
+                            {anomaly.resolved ? (
+                              <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                                RESOLVED
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded">
+                                OPEN
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{formatDateTime(anomaly.created_at)}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await updateAnomaly(anomaly.id, { resolved: !anomaly.resolved });
+                                  if (id) loadOrder(id);
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : 'Failed to update anomaly');
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              {anomaly.resolved ? 'Reopen' : 'Resolve'}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm('Delete this anomaly?')) {
+                                  try {
+                                    await deleteAnomaly(anomaly.id);
+                                    if (id) loadOrder(id);
+                                  } catch (err) {
+                                    alert(err instanceof Error ? err.message : 'Failed to delete anomaly');
+                                  }
+                                }
+                              }}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {showEditModal && (
@@ -249,6 +390,223 @@ export default function ProductionOrderDetail() {
           }}
         />
       )}
+
+      {showAddAnomalyModal && (
+        <AddAnomalyModal
+          orderId={order.id}
+          lines={order.production_order_lines || []}
+          onClose={() => setShowAddAnomalyModal(false)}
+          onSuccess={() => {
+            setShowAddAnomalyModal(false);
+            if (id) loadOrder(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddAnomalyModal({ orderId, lines, onClose, onSuccess }: {
+  orderId: string;
+  lines: ProductionOrderLine[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [target, setTarget] = useState<'order' | 'line'>('order');
+  const [lineId, setLineId] = useState('');
+  const [service, setService] = useState<ServiceStage>('planning');
+  const [severity, setSeverity] = useState<Severity>('medium');
+  const [description, setDescription] = useState('');
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [resolved, setResolved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!description.trim()) {
+      setError('Description is required');
+      return;
+    }
+
+    if (target === 'line' && !lineId) {
+      setError('Please select a line');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await createAnomaly({
+        production_order_id: target === 'order' ? orderId : undefined,
+        production_order_line_id: target === 'line' ? lineId : undefined,
+        service,
+        severity,
+        description: description.trim(),
+        is_blocking: isBlocking,
+        resolved,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create anomaly');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Add Anomaly</h2>
+
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="order"
+                    checked={target === 'order'}
+                    onChange={() => setTarget('order')}
+                    className="mr-2"
+                  />
+                  Order
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    value="line"
+                    checked={target === 'line'}
+                    onChange={() => setTarget('line')}
+                    className="mr-2"
+                  />
+                  Line
+                </label>
+              </div>
+            </div>
+
+            {target === 'line' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Line *
+                </label>
+                <select
+                  value={lineId}
+                  onChange={(e) => setLineId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                  required
+                >
+                  <option value="">Select a line</option>
+                  {lines.map((line) => (
+                    <option key={line.id} value={line.id}>
+                      {line.code} - {line.article_ref}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Service
+              </label>
+              <select
+                value={service}
+                onChange={(e) => setService(e.target.value as ServiceStage)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+              >
+                <option value="planning">Planning</option>
+                <option value="cutting">Cutting</option>
+                <option value="services">Services</option>
+                <option value="sewing">Sewing</option>
+                <option value="finishing">Finishing</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Severity
+              </label>
+              <select
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value as Severity)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description *
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                rows={3}
+                placeholder="Describe the issue..."
+                required
+              />
+            </div>
+
+            <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={isBlocking}
+                  onChange={(e) => setIsBlocking(e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm font-medium text-gray-700">Blocking (triggers issue state)</span>
+              </label>
+            </div>
+
+            <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={resolved}
+                  onChange={(e) => setResolved(e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm font-medium text-gray-700">Resolved</span>
+              </label>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+            >
+              {submitting ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -399,6 +757,27 @@ function LineDetailModal({ line, onClose, onSuccess, onDelete }: {
   const [submitting, setSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const [sizes, setSizes] = useState<ProductionOrderLineSize[]>([]);
+  const [sizesLoading, setSizesLoading] = useState(true);
+  const [showAddSizeForm, setShowAddSizeForm] = useState(false);
+  const [editingSizeId, setEditingSizeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSizes();
+  }, []);
+
+  async function loadSizes() {
+    try {
+      setSizesLoading(true);
+      const data = await fetchLineSizes(line.id);
+      setSizes(data);
+    } catch (err) {
+      console.error('Failed to load sizes:', err);
+    } finally {
+      setSizesLoading(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -467,147 +846,450 @@ function LineDetailModal({ line, onClose, onSuccess, onDelete }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+      <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 my-8">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Line Details: {line.code}</h2>
 
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Article Reference</label>
-              <p className="text-gray-900">{line.article_ref}</p>
-            </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Line Info</h3>
+            <form onSubmit={handleSubmit}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Article Reference</label>
+                  <p className="text-gray-900">{line.article_ref}</p>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">Color</label>
-              <p className="text-gray-900">{line.color || '-'}</p>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Color</label>
+                  <p className="text-gray-900">{line.color || '-'}</p>
+                </div>
 
-            <div className="border-t pt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity Ordered
-              </label>
-              <input
-                type="number"
-                value={qtyOrdered}
-                onChange={(e) => setQtyOrdered(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                min="0"
-              />
-            </div>
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity Ordered
+                  </label>
+                  <input
+                    type="number"
+                    value={qtyOrdered}
+                    onChange={(e) => setQtyOrdered(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                    min="0"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity To Produce
-              </label>
-              <input
-                type="number"
-                value={qtyToProduce}
-                onChange={(e) => setQtyToProduce(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                min="0"
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity To Produce
+                  </label>
+                  <input
+                    type="number"
+                    value={qtyToProduce}
+                    onChange={(e) => setQtyToProduce(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                    min="0"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity Produced
-              </label>
-              <input
-                type="number"
-                value={qtyProduced}
-                onChange={(e) => setQtyProduced(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                min="0"
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity Produced
+                  </label>
+                  <input
+                    type="number"
+                    value={qtyProduced}
+                    onChange={(e) => setQtyProduced(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                    min="0"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity Defect
-              </label>
-              <input
-                type="number"
-                value={qtyDefect}
-                onChange={(e) => setQtyDefect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-                min="0"
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity Defect
+                  </label>
+                  <input
+                    type="number"
+                    value={qtyDefect}
+                    onChange={(e) => setQtyDefect(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                    min="0"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                State
-              </label>
-              <select
-                value={state}
-                onChange={(e) => setState(e.target.value as ProductionState)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    State
+                  </label>
+                  <select
+                    value={state}
+                    onChange={(e) => setState(e.target.value as ProductionState)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="planned">Planned</option>
+                    <option value="in_production">In Production</option>
+                    <option value="issue">Issue</option>
+                    <option value="produced">Produced</option>
+                    <option value="invoiced">Invoiced</option>
+                    <option value="shipped">Shipped</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Service Current
+                  </label>
+                  <select
+                    value={serviceCurrent}
+                    onChange={(e) => setServiceCurrent(e.target.value as ServiceStage)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="cutting">Cutting</option>
+                    <option value="services">Services</option>
+                    <option value="sewing">Sewing</option>
+                    <option value="finishing">Finishing</option>
+                  </select>
+                </div>
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded text-sm">
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+                <div className="flex space-x-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={submitting}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    {submitting ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-semibold">Sizes</h3>
+              <button
+                onClick={() => setShowAddSizeForm(!showAddSizeForm)}
+                className="px-3 py-1 bg-gray-800 text-white text-sm rounded hover:bg-gray-700"
               >
-                <option value="draft">Draft</option>
-                <option value="planned">Planned</option>
-                <option value="in_production">In Production</option>
-                <option value="issue">Issue</option>
-                <option value="produced">Produced</option>
-                <option value="invoiced">Invoiced</option>
-                <option value="shipped">Shipped</option>
-              </select>
+                {showAddSizeForm ? 'Cancel' : 'Add Size'}
+              </button>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Service Current
-              </label>
-              <select
-                value={serviceCurrent}
-                onChange={(e) => setServiceCurrent(e.target.value as ServiceStage)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
-              >
-                <option value="planning">Planning</option>
-                <option value="cutting">Cutting</option>
-                <option value="services">Services</option>
-                <option value="sewing">Sewing</option>
-                <option value="finishing">Finishing</option>
-              </select>
-            </div>
+            {showAddSizeForm && (
+              <AddSizeForm
+                lineId={line.id}
+                onSuccess={() => {
+                  setShowAddSizeForm(false);
+                  loadSizes();
+                }}
+              />
+            )}
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded text-sm">
-                {error}
+            {sizesLoading ? (
+              <p className="text-gray-600 text-sm">Loading sizes...</p>
+            ) : (
+              <div className="border rounded overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ordered</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">To Produce</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produced</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Defect</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sizes.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-4 text-center text-gray-500">
+                          No sizes yet
+                        </td>
+                      </tr>
+                    ) : (
+                      sizes.map((size) => (
+                        <SizeRow
+                          key={size.id}
+                          size={size}
+                          isEditing={editingSizeId === size.id}
+                          onEdit={() => setEditingSizeId(size.id)}
+                          onCancelEdit={() => setEditingSizeId(null)}
+                          onSave={() => {
+                            setEditingSizeId(null);
+                            loadSizes();
+                          }}
+                          onDelete={() => loadSizes()}
+                        />
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          <div className="mt-6 flex justify-between">
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={submitting}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-            >
-              Delete
-            </button>
-            <div className="flex space-x-3">
+function AddSizeForm({ lineId, onSuccess }: {
+  lineId: string;
+  onSuccess: () => void;
+}) {
+  const [size, setSize] = useState('');
+  const [qtyOrdered, setQtyOrdered] = useState('0');
+  const [qtyToProduce, setQtyToProduce] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!size.trim()) {
+      setError('Size is required');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await upsertLineSize(lineId, {
+        size: size.trim(),
+        qty_ordered: parseInt(qtyOrdered),
+        qty_to_produce: qtyToProduce.trim() ? parseInt(qtyToProduce) : parseInt(qtyOrdered),
+      });
+      setSize('');
+      setQtyOrdered('0');
+      setQtyToProduce('');
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add size');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-4 p-3 bg-gray-50 rounded border">
+      <div className="space-y-2">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Size *</label>
+          <input
+            type="text"
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+            placeholder="e.g., S, M, L"
+            required
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Qty Ordered</label>
+            <input
+              type="number"
+              value={qtyOrdered}
+              onChange={(e) => setQtyOrdered(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+              min="0"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Qty To Produce</label>
+            <input
+              type="number"
+              value={qtyToProduce}
+              onChange={(e) => setQtyToProduce(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-800"
+              placeholder={qtyOrdered}
+              min="0"
+            />
+          </div>
+        </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 px-2 py-1 rounded text-xs">
+            {error}
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full px-3 py-1 bg-gray-800 text-white text-sm rounded hover:bg-gray-700 disabled:opacity-50"
+        >
+          {submitting ? 'Adding...' : 'Add Size'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function SizeRow({ size, isEditing, onEdit, onCancelEdit, onSave, onDelete }: {
+  size: ProductionOrderLineSize;
+  isEditing: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  const [qtyOrdered, setQtyOrdered] = useState(size.qty_ordered.toString());
+  const [qtyToProduce, setQtyToProduce] = useState(size.qty_to_produce.toString());
+  const [qtyProduced, setQtyProduced] = useState(size.qty_produced.toString());
+  const [qtyDefect, setQtyDefect] = useState(size.qty_defect.toString());
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSave() {
+    setError(null);
+    try {
+      setSubmitting(true);
+      await updateLineSize(size.id, {
+        qty_ordered: parseInt(qtyOrdered),
+        qty_to_produce: parseInt(qtyToProduce),
+        qty_produced: parseInt(qtyProduced),
+        qty_defect: parseInt(qtyDefect),
+      });
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update size');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (confirm(`Delete size ${size.size}?`)) {
+      try {
+        await deleteLineSize(size.id);
+        onDelete();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to delete size');
+      }
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <>
+        <tr className="bg-blue-50">
+          <td className="px-3 py-2 text-sm font-medium text-gray-900">{size.size}</td>
+          <td className="px-3 py-2">
+            <input
+              type="number"
+              value={qtyOrdered}
+              onChange={(e) => setQtyOrdered(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              min="0"
+            />
+          </td>
+          <td className="px-3 py-2">
+            <input
+              type="number"
+              value={qtyToProduce}
+              onChange={(e) => setQtyToProduce(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              min="0"
+            />
+          </td>
+          <td className="px-3 py-2">
+            <input
+              type="number"
+              value={qtyProduced}
+              onChange={(e) => setQtyProduced(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              min="0"
+            />
+          </td>
+          <td className="px-3 py-2">
+            <input
+              type="number"
+              value={qtyDefect}
+              onChange={(e) => setQtyDefect(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+              min="0"
+            />
+          </td>
+          <td className="px-3 py-2">
+            <div className="flex gap-1">
               <button
-                type="button"
-                onClick={onClose}
+                onClick={handleSave}
                 disabled={submitting}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+                className="text-green-600 hover:text-green-800 text-xs disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                onClick={onCancelEdit}
+                disabled={submitting}
+                className="text-gray-600 hover:text-gray-800 text-xs disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 disabled:opacity-50"
-              >
-                {submitting ? 'Saving...' : 'Save'}
-              </button>
             </div>
-          </div>
-        </form>
-      </div>
-    </div>
+          </td>
+        </tr>
+        {error && (
+          <tr>
+            <td colSpan={6} className="px-3 py-1 bg-red-50 border-t-0">
+              <div className="text-red-600 text-xs">{error}</div>
+            </td>
+          </tr>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <tr>
+      <td className="px-3 py-2 text-sm font-medium text-gray-900">{size.size}</td>
+      <td className="px-3 py-2 text-sm text-gray-600">{size.qty_ordered}</td>
+      <td className="px-3 py-2 text-sm text-gray-600">{size.qty_to_produce}</td>
+      <td className="px-3 py-2 text-sm text-gray-600">{size.qty_produced}</td>
+      <td className="px-3 py-2 text-sm text-gray-600">{size.qty_defect}</td>
+      <td className="px-3 py-2 text-sm">
+        <div className="flex gap-1">
+          <button
+            onClick={onEdit}
+            className="text-blue-600 hover:text-blue-800 text-xs"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            className="text-red-600 hover:text-red-800 text-xs"
+          >
+            Delete
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 

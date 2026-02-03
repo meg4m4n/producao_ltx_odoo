@@ -2,6 +2,31 @@ export type ServiceStage = 'planning' | 'cutting' | 'services' | 'sewing' | 'fin
 
 export type ProductionState = 'draft' | 'planned' | 'in_production' | 'issue' | 'produced' | 'invoiced' | 'shipped';
 
+export type Severity = 'low' | 'medium' | 'high';
+
+export interface ProductionOrderLineSize {
+  id: string;
+  production_order_line_id: string;
+  size: string;
+  qty_ordered: number;
+  qty_to_produce: number;
+  qty_produced: number;
+  qty_defect: number;
+}
+
+export interface ProductionAnomaly {
+  id: string;
+  production_order_id: string | null;
+  production_order_line_id: string | null;
+  service: ServiceStage;
+  severity: Severity;
+  description: string;
+  is_blocking: boolean;
+  resolved: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProductionOrderLine {
   id: string;
   production_order_id: string;
@@ -33,6 +58,7 @@ export interface ProductionOrder {
   created_at: string;
   updated_at: string;
   production_order_lines?: ProductionOrderLine[];
+  anomalies?: ProductionAnomaly[];
 }
 
 export interface CreateProductionOrderData {
@@ -68,4 +94,36 @@ export interface UpdateProductionOrderLineData {
   qty_defect?: number;
   state?: ProductionState;
   service_current?: ServiceStage;
+}
+
+export interface UpsertSizeData {
+  size: string;
+  qty_ordered: number;
+  qty_to_produce?: number;
+}
+
+export interface UpdateSizeData {
+  size?: string;
+  qty_ordered?: number;
+  qty_to_produce?: number;
+  qty_produced?: number;
+  qty_defect?: number;
+}
+
+export interface CreateAnomalyData {
+  production_order_id?: string;
+  production_order_line_id?: string;
+  service: ServiceStage;
+  severity: Severity;
+  description: string;
+  is_blocking?: boolean;
+  resolved?: boolean;
+}
+
+export interface UpdateAnomalyData {
+  service?: ServiceStage;
+  severity?: Severity;
+  description?: string;
+  is_blocking?: boolean;
+  resolved?: boolean;
 }

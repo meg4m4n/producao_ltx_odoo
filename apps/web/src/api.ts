@@ -4,7 +4,13 @@ import {
   UpdateProductionOrderData,
   ProductionOrderLine,
   CreateProductionOrderLineData,
-  UpdateProductionOrderLineData
+  UpdateProductionOrderLineData,
+  ProductionOrderLineSize,
+  UpsertSizeData,
+  UpdateSizeData,
+  ProductionAnomaly,
+  CreateAnomalyData,
+  UpdateAnomalyData
 } from './types';
 
 const API_BASE_URL = 'http://localhost:3001';
@@ -101,5 +107,103 @@ export async function deleteProductionOrderLine(lineId: string): Promise<void> {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to delete production order line');
+  }
+}
+
+export async function fetchLineSizes(lineId: string): Promise<ProductionOrderLineSize[]> {
+  const response = await fetch(`${API_BASE_URL}/api/production-order-lines/${lineId}/sizes`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sizes');
+  }
+  return response.json();
+}
+
+export async function upsertLineSize(lineId: string, data: UpsertSizeData): Promise<ProductionOrderLineSize[]> {
+  const response = await fetch(`${API_BASE_URL}/api/production-order-lines/${lineId}/sizes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to upsert size');
+  }
+
+  return response.json();
+}
+
+export async function updateLineSize(sizeId: string, data: UpdateSizeData): Promise<ProductionOrderLineSize> {
+  const response = await fetch(`${API_BASE_URL}/api/production-order-line-sizes/${sizeId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update size');
+  }
+
+  return response.json();
+}
+
+export async function deleteLineSize(sizeId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/production-order-line-sizes/${sizeId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete size');
+  }
+}
+
+export async function createAnomaly(data: CreateAnomalyData): Promise<ProductionAnomaly> {
+  const response = await fetch(`${API_BASE_URL}/api/anomalies`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create anomaly');
+  }
+
+  return response.json();
+}
+
+export async function updateAnomaly(id: string, data: UpdateAnomalyData): Promise<ProductionAnomaly> {
+  const response = await fetch(`${API_BASE_URL}/api/anomalies/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update anomaly');
+  }
+
+  return response.json();
+}
+
+export async function deleteAnomaly(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/anomalies/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete anomaly');
   }
 }
