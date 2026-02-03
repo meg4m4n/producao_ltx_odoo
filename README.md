@@ -4,7 +4,7 @@
 
 This is a production and manufacturing order (OF) management system designed to integrate with Odoo 14 CE logic. Currently, this is a standalone foundation setup that will later be connected to Odoo.
 
-**Current Status:** Step 0 - Foundation
+**Current Status:** Slice 2A - Basic UI for Production Orders
 
 ## Project Structure
 
@@ -79,6 +79,29 @@ npm run dev:web
 
 The web application will be available at `http://localhost:5173`
 
+## Features
+
+### Production Orders Management
+
+- **List View** (`/production`):
+  - Table displaying all production orders
+  - Visual state indicators:
+    - Red highlight for orders with `issue` state
+    - Green highlight for completed orders (`produced`, `invoiced`, `shipped`)
+  - Client-side filtering by state
+  - Click any row to view details
+
+- **Create Order**:
+  - Modal form accessible from list view
+  - Required field: OF code
+  - Optional fields: sale reference, customer name, delivery requested date
+  - Automatic redirect to detail view after creation
+
+- **Detail View** (`/production/:id`):
+  - Display all order header information
+  - Edit order details (excluding state, which is auto-managed)
+  - Navigate back to list view
+
 ## Database
 
 ### Initialize Prisma
@@ -93,15 +116,31 @@ npm run db:generate
 npm run db:migrate
 ```
 
-**Note:** Currently, the schema is empty. Business tables will be added in future steps.
+### API Testing
+
+See `docs/curl.md` for comprehensive API usage examples.
 
 ## Development Notes
 
-- **Step 0 (Current):** Foundation setup complete
+- **Slice 2A (Current):** Basic UI for production orders
+  - List view with state-based visual indicators
+  - Create new production orders
+  - View and edit production order details
+  - Client-side state filtering
+
+- **Completed:**
+  - Step 0: Foundation setup
+  - Step 1: Database schema and API endpoints for production orders, lines, sizes, and anomalies
+  - Slice 2A: Minimal UI for production order management
+
+- **Next Steps:**
+  - Add UI for managing production order lines
+  - Add UI for managing sizes
+  - Add UI for anomaly tracking
+  - Implement authentication
+
 - No authentication implemented yet
-- No business logic or production order tables yet
-- Minimal design and styling
-- Ready for incremental development
+- Minimal design and styling (functional focus)
 
 ## Future Integration
 

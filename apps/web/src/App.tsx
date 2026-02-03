@@ -1,8 +1,16 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import ProductionOrdersList from './components/ProductionOrdersList';
+import ProductionOrderDetail from './components/ProductionOrderDetail';
+
 function App() {
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <p className="text-xl text-gray-800">Production module – foundation ready</p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/production" replace />} />
+        <Route path="/production" element={<ProductionOrdersList />} />
+        <Route path="/production/:id" element={<ProductionOrderDetail />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
