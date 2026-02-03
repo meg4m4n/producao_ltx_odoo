@@ -110,7 +110,12 @@ app.get('/api/production-orders/:id', async (req, res) => {
       where: { id },
       include: {
         production_order_lines: {
-          orderBy: { seq: 'asc' }
+          orderBy: { seq: 'asc' },
+          include: {
+            line_sizes: {
+              orderBy: { size: 'asc' }
+            }
+          }
         }
       }
     });
@@ -119,7 +124,17 @@ app.get('/api/production-orders/:id', async (req, res) => {
       return res.status(404).json({ error: 'Production order not found' });
     }
 
-    res.json(order);
+    const anomalies = await prisma.production_anomalies.findMany({
+      where: {
+        OR: [
+          { production_order_id: id },
+          { production_order_line_id: { in: order.production_order_lines.map(l => l.id) } }
+        ]
+      },
+      orderBy: { created_at: 'desc' }
+    });
+
+    res.json({ ...order, anomalies });
   } catch (error) {
     console.error('Error fetching production order:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -358,6 +373,380 @@ app.delete('/api/production-order-lines/:lineId', async (req, res) => {
       return res.status(404).json({ error: 'Production order line not found' });
     }
     console.error('Error deleting production order line:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function updateIssueStates(affectedLineIds = [], affectedOrderIds = []) {
+  const lineIdsSet = new Set(affectedLineIds);
+  const orderIdsSet = new Set(affectedOrderIds);
+
+  for (const lineId of lineIdsSet) {
+    const line = await prisma.production_order_lines.findUnique({
+      where: { id: lineId },
+      include: { production_order: true }
+    });
+
+    if (!line) continue;
+
+    if (line.production_order_id) {
+      orderIdsSet.add(line.production_order_id);
+    }
+
+    const blockingAnomaly = await prisma.production_anomalies.findFirst({
+      where: {
+        production_order_line_id: lineId,
+        is_blocking: true,
+        resolved: false
+      }
+    });
+
+    if (blockingAnomaly) {
+      if (line.state !== 'issue') {
+        await prisma.production_order_lines.update({
+          where: { id: lineId },
+          data: { state: 'issue' }
+        });
+      }
+    } else {
+      if (line.state === 'issue') {
+        const parentState = line.production_order?.state || 'draft';
+        const newState = parentState === 'issue' ? 'draft' : parentState;
+        await prisma.production_order_lines.update({
+          where: { id: lineId },
+          data: { state: newState }
+        });
+      }
+    }
+  }
+
+  for (const orderId of orderIdsSet) {
+    const linesWithIssue = await prisma.production_order_lines.findFirst({
+      where: {
+        production_order_id: orderId,
+        state: 'issue'
+      }
+    });
+
+    const order = await prisma.production_orders.findUnique({
+      where: { id: orderId }
+    });
+
+    if (!order) continue;
+
+    if (linesWithIssue) {
+      if (order.state !== 'issue') {
+        await prisma.production_orders.update({
+          where: { id: orderId },
+          data: { state: 'issue' }
+        });
+      }
+    } else {
+      if (order.state === 'issue') {
+        const newState = ['produced', 'invoiced', 'shipped'].includes(order.state) ? 'in_production' : 'draft';
+        await prisma.production_orders.update({
+          where: { id: orderId },
+          data: { state: newState }
+        });
+      }
+    }
+  }
+}
+
+app.post('/api/production-order-lines/:lineId/sizes', async (req, res) => {
+  try {
+    const { lineId } = req.params;
+    const { size, qty_ordered = 0, qty_to_produce } = req.body;
+
+    if (!size) {
+      return res.status(400).json({ error: 'size is required' });
+    }
+
+    const line = await prisma.production_order_lines.findUnique({
+      where: { id: lineId }
+    });
+
+    if (!line) {
+      return res.status(404).json({ error: 'Production order line not found' });
+    }
+
+    const finalQtyToProduce = qty_to_produce !== undefined ? qty_to_produce : qty_ordered;
+
+    await prisma.production_order_line_sizes.upsert({
+      where: {
+        production_order_line_id_size: {
+          production_order_line_id: lineId,
+          size: size
+        }
+      },
+      update: {
+        qty_ordered,
+        qty_to_produce: finalQtyToProduce
+      },
+      create: {
+        production_order_line_id: lineId,
+        size,
+        qty_ordered,
+        qty_to_produce: finalQtyToProduce,
+        qty_produced: 0,
+        qty_defect: 0
+      }
+    });
+
+    const sizes = await prisma.production_order_line_sizes.findMany({
+      where: { production_order_line_id: lineId },
+      orderBy: { size: 'asc' }
+    });
+
+    res.json(sizes);
+  } catch (error) {
+    console.error('Error upserting size:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/production-order-lines/:lineId/sizes', async (req, res) => {
+  try {
+    const { lineId } = req.params;
+
+    const sizes = await prisma.production_order_line_sizes.findMany({
+      where: { production_order_line_id: lineId },
+      orderBy: { size: 'asc' }
+    });
+
+    res.json(sizes);
+  } catch (error) {
+    console.error('Error fetching sizes:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/production-order-line-sizes/:sizeId', async (req, res) => {
+  try {
+    const { sizeId } = req.params;
+    const { size, qty_ordered, qty_to_produce, qty_produced, qty_defect } = req.body;
+
+    const data = {};
+
+    if (size !== undefined) data.size = size;
+    if (qty_ordered !== undefined) data.qty_ordered = qty_ordered;
+    if (qty_to_produce !== undefined) data.qty_to_produce = qty_to_produce;
+    if (qty_produced !== undefined) data.qty_produced = qty_produced;
+    if (qty_defect !== undefined) data.qty_defect = qty_defect;
+
+    const sizeRecord = await prisma.production_order_line_sizes.update({
+      where: { id: sizeId },
+      data
+    });
+
+    res.json(sizeRecord);
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Size record not found' });
+    }
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Size already exists for this line' });
+    }
+    console.error('Error updating size:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/production-order-line-sizes/:sizeId', async (req, res) => {
+  try {
+    const { sizeId } = req.params;
+
+    await prisma.production_order_line_sizes.delete({
+      where: { id: sizeId }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Size record not found' });
+    }
+    console.error('Error deleting size:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/anomalies', async (req, res) => {
+  try {
+    const {
+      production_order_id,
+      production_order_line_id,
+      service,
+      severity,
+      description,
+      is_blocking = false,
+      resolved = false
+    } = req.body;
+
+    if (!production_order_id && !production_order_line_id) {
+      return res.status(400).json({ error: 'Must provide at least one of production_order_id or production_order_line_id' });
+    }
+
+    if (!service || !severity || !description) {
+      return res.status(400).json({ error: 'service, severity, and description are required' });
+    }
+
+    const validServiceStages = ['planning', 'cutting', 'services', 'sewing', 'finishing'];
+    if (!validServiceStages.includes(service)) {
+      return res.status(400).json({ error: 'Invalid service value' });
+    }
+
+    const validSeverities = ['low', 'medium', 'high'];
+    if (!validSeverities.includes(severity)) {
+      return res.status(400).json({ error: 'Invalid severity value' });
+    }
+
+    let finalOrderId = production_order_id;
+
+    if (production_order_line_id && !finalOrderId) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: production_order_line_id }
+      });
+
+      if (!line) {
+        return res.status(404).json({ error: 'Production order line not found' });
+      }
+
+      finalOrderId = line.production_order_id;
+    }
+
+    const anomaly = await prisma.production_anomalies.create({
+      data: {
+        production_order_id: finalOrderId || null,
+        production_order_line_id: production_order_line_id || null,
+        service,
+        severity,
+        description,
+        is_blocking,
+        resolved
+      }
+    });
+
+    const affectedLineIds = production_order_line_id ? [production_order_line_id] : [];
+    const affectedOrderIds = finalOrderId ? [finalOrderId] : [];
+    await updateIssueStates(affectedLineIds, affectedOrderIds);
+
+    res.status(201).json(anomaly);
+  } catch (error) {
+    console.error('Error creating anomaly:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/anomalies', async (req, res) => {
+  try {
+    const { production_order_id, production_order_line_id, resolved } = req.query;
+
+    const where = {};
+
+    if (production_order_id) {
+      where.production_order_id = production_order_id;
+    }
+
+    if (production_order_line_id) {
+      where.production_order_line_id = production_order_line_id;
+    }
+
+    if (resolved !== undefined) {
+      where.resolved = resolved === 'true';
+    }
+
+    const anomalies = await prisma.production_anomalies.findMany({
+      where,
+      orderBy: { created_at: 'desc' }
+    });
+
+    res.json(anomalies);
+  } catch (error) {
+    console.error('Error fetching anomalies:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/anomalies/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { service, severity, description, is_blocking, resolved } = req.body;
+
+    const data = {};
+
+    if (service !== undefined) {
+      const validServiceStages = ['planning', 'cutting', 'services', 'sewing', 'finishing'];
+      if (!validServiceStages.includes(service)) {
+        return res.status(400).json({ error: 'Invalid service value' });
+      }
+      data.service = service;
+    }
+
+    if (severity !== undefined) {
+      const validSeverities = ['low', 'medium', 'high'];
+      if (!validSeverities.includes(severity)) {
+        return res.status(400).json({ error: 'Invalid severity value' });
+      }
+      data.severity = severity;
+    }
+
+    if (description !== undefined) data.description = description;
+    if (is_blocking !== undefined) data.is_blocking = is_blocking;
+    if (resolved !== undefined) data.resolved = resolved;
+
+    const existingAnomaly = await prisma.production_anomalies.findUnique({
+      where: { id }
+    });
+
+    if (!existingAnomaly) {
+      return res.status(404).json({ error: 'Anomaly not found' });
+    }
+
+    const anomaly = await prisma.production_anomalies.update({
+      where: { id },
+      data
+    });
+
+    const affectedLineIds = anomaly.production_order_line_id ? [anomaly.production_order_line_id] : [];
+    const affectedOrderIds = anomaly.production_order_id ? [anomaly.production_order_id] : [];
+    await updateIssueStates(affectedLineIds, affectedOrderIds);
+
+    res.json(anomaly);
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Anomaly not found' });
+    }
+    console.error('Error updating anomaly:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/anomalies/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existingAnomaly = await prisma.production_anomalies.findUnique({
+      where: { id }
+    });
+
+    if (!existingAnomaly) {
+      return res.status(404).json({ error: 'Anomaly not found' });
+    }
+
+    await prisma.production_anomalies.delete({
+      where: { id }
+    });
+
+    const affectedLineIds = existingAnomaly.production_order_line_id ? [existingAnomaly.production_order_line_id] : [];
+    const affectedOrderIds = existingAnomaly.production_order_id ? [existingAnomaly.production_order_id] : [];
+    await updateIssueStates(affectedLineIds, affectedOrderIds);
+
+    res.status(204).send();
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Anomaly not found' });
+    }
+    console.error('Error deleting anomaly:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
