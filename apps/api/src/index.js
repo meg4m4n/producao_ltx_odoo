@@ -777,6 +777,8 @@ app.post('/api/production-orders/:id/import-sales', async (req, res) => {
       seq++;
     }
 
+    await recalculateProductionOrderState(id);
+
     res.status(201).json({
       created_lines: details.length,
       details: details
