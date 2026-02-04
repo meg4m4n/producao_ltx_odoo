@@ -22,7 +22,8 @@ import {
   createAnomaly,
   updateAnomaly,
   deleteAnomaly,
-  importSalesLines
+  importSalesLines,
+  advanceLineStage
 } from '../api';
 
 export default function ProductionOrderDetail() {
@@ -37,6 +38,8 @@ export default function ProductionOrderDetail() {
   const [showAddAnomalyModal, setShowAddAnomalyModal] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [advancingLineId, setAdvancingLineId] = useState<string | null>(null);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -65,14 +68,39 @@ export default function ProductionOrderDetail() {
     return new Date(dateString).toLocaleString();
   }
 
-  function getLineRowClassName(state: ProductionState) {
+  function getLineRowClassName(state: ProductionState, serviceCurrent: ServiceStage) {
     if (state === 'issue') {
       return 'bg-red-50 hover:bg-red-100 cursor-pointer';
     }
-    if (['produced', 'invoiced', 'shipped'].includes(state)) {
+    if (serviceCurrent === 'produced' || ['produced', 'invoiced', 'shipped'].includes(state)) {
       return 'bg-green-50 hover:bg-green-100 cursor-pointer';
     }
     return 'hover:bg-gray-50 cursor-pointer';
+  }
+
+  function getAdvanceButtonLabel(serviceCurrent: ServiceStage): string {
+    const labelMap: Record<ServiceStage, string> = {
+      'planning': 'Advance to cutting',
+      'cutting': 'Advance to services',
+      'services': 'Advance to sewing',
+      'sewing': 'Advance to finishing',
+      'finishing': 'Advance to produced'
+    };
+    return labelMap[serviceCurrent] || 'Done';
+  }
+
+  async function handleAdvanceLine(lineId: string) {
+    try {
+      setAdvancingLineId(lineId);
+      setAdvanceError(null);
+      await advanceLineStage(lineId);
+      if (id) await loadOrder(id);
+    } catch (err) {
+      setAdvanceError(err instanceof Error ? err.message : 'Failed to advance');
+      setTimeout(() => setAdvanceError(null), 5000);
+    } finally {
+      setAdvancingLineId(null);
+    }
   }
 
   if (loading) {
@@ -205,6 +233,12 @@ export default function ProductionOrderDetail() {
             </div>
           )}
 
+          {advanceError && (
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+              {advanceError}
+            </div>
+          )}
+
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -218,41 +252,111 @@ export default function ProductionOrderDetail() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Defect</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {!order.production_order_lines || order.production_order_lines.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                       No lines yet. Click "Add Line" to create one.
                     </td>
                   </tr>
                 ) : (
-                  order.production_order_lines.map((line) => (
-                    <tr
-                      key={line.id}
-                      onClick={() => setSelectedLine(line)}
-                      className={getLineRowClassName(line.state)}
-                    >
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{line.code}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.article_ref}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.color || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.qty_ordered}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.qty_to_produce}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.qty_produced}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.qty_defect}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          line.state === 'issue' ? 'bg-red-100 text-red-800' :
-                          ['produced', 'invoiced', 'shipped'].includes(line.state) ? 'bg-green-100 text-green-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {line.state}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{line.service_current}</td>
-                    </tr>
-                  ))
+                  order.production_order_lines.map((line) => {
+                    const isProduced = line.service_current === 'produced';
+                    const isAdvancing = advancingLineId === line.id;
+
+                    return (
+                      <tr
+                        key={line.id}
+                        className={getLineRowClassName(line.state, line.service_current)}
+                      >
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm font-medium text-gray-900 cursor-pointer"
+                        >
+                          {line.code}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.article_ref}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.color || '-'}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.qty_ordered}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.qty_to_produce}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.qty_produced}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
+                        >
+                          {line.qty_defect}
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm cursor-pointer"
+                        >
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            line.state === 'issue' ? 'bg-red-100 text-red-800' :
+                            ['produced', 'invoiced', 'shipped'].includes(line.state) ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {line.state}
+                          </span>
+                        </td>
+                        <td
+                          onClick={() => setSelectedLine(line)}
+                          className="px-4 py-3 text-sm cursor-pointer"
+                        >
+                          <span className={`${
+                            isProduced ? 'text-gray-400' : 'text-gray-900'
+                          }`}>
+                            {line.service_current}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAdvanceLine(line.id);
+                            }}
+                            disabled={isProduced || isAdvancing}
+                            className={`px-3 py-1 text-xs rounded ${
+                              isProduced
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : isAdvancing
+                                ? 'bg-gray-300 text-gray-600 cursor-wait'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {isAdvancing ? '...' : isProduced ? 'Done' : getAdvanceButtonLabel(line.service_current)}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

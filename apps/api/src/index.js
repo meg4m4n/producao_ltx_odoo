@@ -377,6 +377,76 @@ app.delete('/api/production-order-lines/:lineId', async (req, res) => {
   }
 });
 
+app.post('/api/production-order-lines/:lineId/advance', async (req, res) => {
+  try {
+    const { lineId } = req.params;
+
+    const line = await prisma.production_order_lines.findUnique({
+      where: { id: lineId }
+    });
+
+    if (!line) {
+      return res.status(404).json({ error: 'Production order line not found' });
+    }
+
+    const blockingAnomaly = await prisma.production_anomalies.findFirst({
+      where: {
+        production_order_line_id: lineId,
+        is_blocking: true,
+        resolved: false
+      }
+    });
+
+    if (blockingAnomaly) {
+      return res.status(409).json({ error: 'Blocking anomaly unresolved' });
+    }
+
+    const stageMap = {
+      'planning': 'cutting',
+      'cutting': 'services',
+      'services': 'sewing',
+      'sewing': 'finishing',
+      'finishing': 'produced'
+    };
+
+    if (line.service_current === 'cutting') {
+      if (line.qty_produced === 0) {
+        return res.status(409).json({ error: 'Cutting not completed' });
+      }
+    }
+
+    if (line.service_current === 'finishing') {
+      if (line.qty_produced < line.qty_to_produce) {
+        return res.status(409).json({ error: 'Produced quantity insufficient' });
+      }
+    }
+
+    const nextStage = stageMap[line.service_current];
+
+    if (!nextStage) {
+      return res.status(400).json({ error: 'Already produced' });
+    }
+
+    const updateData = {
+      service_current: nextStage
+    };
+
+    if (nextStage === 'produced') {
+      updateData.state = 'produced';
+    }
+
+    const updatedLine = await prisma.production_order_lines.update({
+      where: { id: lineId },
+      data: updateData
+    });
+
+    res.json(updatedLine);
+  } catch (error) {
+    console.error('Error advancing production order line:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 async function updateIssueStates(affectedLineIds = [], affectedOrderIds = []) {
   const lineIdsSet = new Set(affectedLineIds);
   const orderIdsSet = new Set(affectedOrderIds);
