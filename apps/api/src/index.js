@@ -440,12 +440,48 @@ app.post('/api/production-order-lines/:lineId/advance', async (req, res) => {
       data: updateData
     });
 
+    await recalculateProductionOrderState(line.production_order_id);
+
     res.json(updatedLine);
   } catch (error) {
     console.error('Error advancing production order line:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+async function recalculateProductionOrderState(productionOrderId) {
+  const lines = await prisma.production_order_lines.findMany({
+    where: { production_order_id: productionOrderId }
+  });
+
+  if (lines.length === 0) {
+    return;
+  }
+
+  let newState;
+
+  const hasIssue = lines.some(line => line.state === 'issue');
+  if (hasIssue) {
+    newState = 'issue';
+  } else {
+    const allProduced = lines.every(line => line.state === 'produced');
+    if (allProduced) {
+      newState = 'produced';
+    } else {
+      const anyInProgress = lines.some(line => line.service_current !== 'planning');
+      if (anyInProgress) {
+        newState = 'in_production';
+      } else {
+        newState = 'planned';
+      }
+    }
+  }
+
+  await prisma.production_orders.update({
+    where: { id: productionOrderId },
+    data: { state: newState }
+  });
+}
 
 async function updateIssueStates(affectedLineIds = [], affectedOrderIds = []) {
   const lineIdsSet = new Set(affectedLineIds);
