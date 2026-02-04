@@ -865,6 +865,10 @@ app.post('/api/anomalies', async (req, res) => {
     const affectedOrderIds = finalOrderId ? [finalOrderId] : [];
     await updateIssueStates(affectedLineIds, affectedOrderIds);
 
+    if (finalOrderId) {
+      await recalculateProductionOrderState(finalOrderId);
+    }
+
     res.status(201).json(anomaly);
   } catch (error) {
     console.error('Error creating anomaly:', error);
@@ -946,6 +950,20 @@ app.patch('/api/anomalies/:id', async (req, res) => {
     const affectedOrderIds = anomaly.production_order_id ? [anomaly.production_order_id] : [];
     await updateIssueStates(affectedLineIds, affectedOrderIds);
 
+    let productionOrderId = anomaly.production_order_id;
+    if (!productionOrderId && anomaly.production_order_line_id) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: anomaly.production_order_line_id }
+      });
+      if (line) {
+        productionOrderId = line.production_order_id;
+      }
+    }
+
+    if (productionOrderId) {
+      await recalculateProductionOrderState(productionOrderId);
+    }
+
     res.json(anomaly);
   } catch (error) {
     if (error.code === 'P2025') {
@@ -975,6 +993,20 @@ app.delete('/api/anomalies/:id', async (req, res) => {
     const affectedLineIds = existingAnomaly.production_order_line_id ? [existingAnomaly.production_order_line_id] : [];
     const affectedOrderIds = existingAnomaly.production_order_id ? [existingAnomaly.production_order_id] : [];
     await updateIssueStates(affectedLineIds, affectedOrderIds);
+
+    let productionOrderId = existingAnomaly.production_order_id;
+    if (!productionOrderId && existingAnomaly.production_order_line_id) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: existingAnomaly.production_order_line_id }
+      });
+      if (line) {
+        productionOrderId = line.production_order_id;
+      }
+    }
+
+    if (productionOrderId) {
+      await recalculateProductionOrderState(productionOrderId);
+    }
 
     res.status(204).send();
   } catch (error) {
