@@ -273,6 +273,8 @@ app.post('/api/production-orders/:id/lines', async (req, res) => {
         }
       });
 
+      await recalculateProductionOrderState(id);
+
       res.status(201).json(line);
     } catch (error) {
       if (error.code === 'P2002') {
@@ -294,6 +296,8 @@ app.post('/api/production-orders/:id/lines', async (req, res) => {
             state
           }
         });
+
+        await recalculateProductionOrderState(id);
 
         return res.status(201).json(line);
       }
@@ -363,9 +367,21 @@ app.delete('/api/production-order-lines/:lineId', async (req, res) => {
   try {
     const { lineId } = req.params;
 
+    const line = await prisma.production_order_lines.findUnique({
+      where: { id: lineId }
+    });
+
+    if (!line) {
+      return res.status(404).json({ error: 'Production order line not found' });
+    }
+
+    const productionOrderId = line.production_order_id;
+
     await prisma.production_order_lines.delete({
       where: { id: lineId }
     });
+
+    await recalculateProductionOrderState(productionOrderId);
 
     res.status(204).send();
   } catch (error) {
