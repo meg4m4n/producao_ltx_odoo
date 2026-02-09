@@ -27,10 +27,16 @@ Expected response: 201 Created with order object including generated `id`.
 
 ## 2. List Production Orders
 
-List all orders:
+List all active (non-archived) orders:
 
 ```bash
 curl http://localhost:3001/api/production-orders
+```
+
+List all orders including archived:
+
+```bash
+curl "http://localhost:3001/api/production-orders?include_archived=true"
 ```
 
 Filter by state:
@@ -51,7 +57,7 @@ Search by code, sale reference, or customer name:
 curl "http://localhost:3001/api/production-orders?q=ABC"
 ```
 
-Expected response: 200 OK with array of orders, sorted by `updated_at` descending.
+Expected response: 200 OK with array of orders, sorted by `updated_at` descending. By default, archived orders (where `archived_at` is not null) are excluded.
 
 ## 3. Create Production Order Line (auto-seq)
 
@@ -318,6 +324,58 @@ curl -X DELETE http://localhost:3001/api/anomalies/{ANOMALY_ID}
 This will trigger the issue state update logic. If this was a blocking unresolved anomaly, the line/order states will be reset.
 
 Expected response: 204 No Content (empty body).
+
+## 17. Mark Production Order as Invoiced
+
+Replace `{ORDER_ID}` with an actual order ID in `produced` state.
+
+```bash
+curl -X POST http://localhost:3001/api/production-orders/{ORDER_ID}/mark-invoiced \
+  -H "Content-Type: application/json"
+```
+
+Expected response: 200 OK with updated order object with `state: "invoiced"`.
+
+This endpoint validates that the current order state is `produced` before allowing the transition to `invoiced`.
+
+## 18. Mark Production Order as Shipped
+
+Replace `{ORDER_ID}` with an actual order ID in `invoiced` state.
+
+```bash
+curl -X POST http://localhost:3001/api/production-orders/{ORDER_ID}/mark-shipped \
+  -H "Content-Type: application/json"
+```
+
+Expected response: 200 OK with updated order object with `state: "shipped"` and `archived_at` set to current timestamp.
+
+This endpoint validates that the current order state is `invoiced` before allowing the transition to `shipped`. Orders are automatically archived when marked as shipped.
+
+## 19. Locked Order - Edit Attempt
+
+Once an order is marked as `invoiced` or `shipped`, it becomes locked. Any edit attempts will fail:
+
+Try to add a line to a locked order:
+
+```bash
+curl -X POST http://localhost:3001/api/production-orders/{ORDER_ID}/lines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "article_ref": "ART-003",
+    "qty_ordered": 50
+  }'
+```
+
+Expected response: 409 Conflict with message: `{"error": "Order is invoiced/shipped and locked"}`
+
+Similarly, the following operations are blocked on locked orders:
+- PATCH /api/production-orders/:id
+- POST /api/production-orders/:id/import-sales
+- PATCH /api/production-order-lines/:lineId
+- DELETE /api/production-order-lines/:lineId
+- POST /api/anomalies (for order or its lines)
+- PATCH /api/anomalies/:id (for order or its lines)
+- DELETE /api/anomalies/:id (for order or its lines)
 
 ## 15. Delete Size Record
 

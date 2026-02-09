@@ -4,7 +4,7 @@
 
 This is a production and manufacturing order (OF) management system designed to integrate with Odoo 14 CE logic. Currently, this is a standalone foundation setup that will later be connected to Odoo.
 
-**Current Status:** Slice 3B - Import Production Lines from Sales
+**Current Status:** Slice 5A - Invoiced/Shipped + Lock + Archive
 
 ## Project Structure
 

@@ -466,6 +466,18 @@ app.post('/api/production-order-lines/:lineId/advance', async (req, res) => {
 });
 
 async function recalculateProductionOrderState(productionOrderId) {
+  const order = await prisma.production_orders.findUnique({
+    where: { id: productionOrderId }
+  });
+
+  if (!order) {
+    return;
+  }
+
+  if (order.state === 'invoiced' || order.state === 'shipped') {
+    return;
+  }
+
   const lines = await prisma.production_order_lines.findMany({
     where: { production_order_id: productionOrderId }
   });
@@ -696,6 +708,10 @@ app.post('/api/production-orders/:id/import-sales', async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (await isOrderLocked(id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const productionOrder = await prisma.production_orders.findUnique({
       where: { id },
       include: {
@@ -821,6 +837,20 @@ app.post('/api/anomalies', async (req, res) => {
       return res.status(400).json({ error: 'Must provide at least one of production_order_id or production_order_line_id' });
     }
 
+    let finalOrderId = production_order_id;
+    if (production_order_line_id && !finalOrderId) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: production_order_line_id }
+      });
+      if (line) {
+        finalOrderId = line.production_order_id;
+      }
+    }
+
+    if (finalOrderId && await isOrderLocked(finalOrderId)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     if (!service || !severity || !description) {
       return res.status(400).json({ error: 'service, severity, and description are required' });
     }
@@ -833,20 +863,6 @@ app.post('/api/anomalies', async (req, res) => {
     const validSeverities = ['low', 'medium', 'high'];
     if (!validSeverities.includes(severity)) {
       return res.status(400).json({ error: 'Invalid severity value' });
-    }
-
-    let finalOrderId = production_order_id;
-
-    if (production_order_line_id && !finalOrderId) {
-      const line = await prisma.production_order_lines.findUnique({
-        where: { id: production_order_line_id }
-      });
-
-      if (!line) {
-        return res.status(404).json({ error: 'Production order line not found' });
-      }
-
-      finalOrderId = line.production_order_id;
     }
 
     const anomaly = await prisma.production_anomalies.create({
@@ -909,6 +925,29 @@ app.get('/api/anomalies', async (req, res) => {
 app.patch('/api/anomalies/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingAnomaly = await prisma.production_anomalies.findUnique({
+      where: { id }
+    });
+
+    if (!existingAnomaly) {
+      return res.status(404).json({ error: 'Anomaly not found' });
+    }
+
+    let checkOrderId = existingAnomaly.production_order_id;
+    if (!checkOrderId && existingAnomaly.production_order_line_id) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: existingAnomaly.production_order_line_id }
+      });
+      if (line) {
+        checkOrderId = line.production_order_id;
+      }
+    }
+
+    if (checkOrderId && await isOrderLocked(checkOrderId)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const { service, severity, description, is_blocking, resolved } = req.body;
 
     const data = {};
@@ -932,14 +971,6 @@ app.patch('/api/anomalies/:id', async (req, res) => {
     if (description !== undefined) data.description = description;
     if (is_blocking !== undefined) data.is_blocking = is_blocking;
     if (resolved !== undefined) data.resolved = resolved;
-
-    const existingAnomaly = await prisma.production_anomalies.findUnique({
-      where: { id }
-    });
-
-    if (!existingAnomaly) {
-      return res.status(404).json({ error: 'Anomaly not found' });
-    }
 
     const anomaly = await prisma.production_anomalies.update({
       where: { id },
@@ -986,6 +1017,20 @@ app.delete('/api/anomalies/:id', async (req, res) => {
       return res.status(404).json({ error: 'Anomaly not found' });
     }
 
+    let checkOrderId = existingAnomaly.production_order_id;
+    if (!checkOrderId && existingAnomaly.production_order_line_id) {
+      const line = await prisma.production_order_lines.findUnique({
+        where: { id: existingAnomaly.production_order_line_id }
+      });
+      if (line) {
+        checkOrderId = line.production_order_id;
+      }
+    }
+
+    if (checkOrderId && await isOrderLocked(checkOrderId)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     await prisma.production_anomalies.delete({
       where: { id }
     });
@@ -1014,6 +1059,65 @@ app.delete('/api/anomalies/:id', async (req, res) => {
       return res.status(404).json({ error: 'Anomaly not found' });
     }
     console.error('Error deleting anomaly:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/production-orders/:id/mark-invoiced', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await prisma.production_orders.findUnique({
+      where: { id }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Production order not found' });
+    }
+
+    if (order.state !== 'produced') {
+      return res.status(409).json({ error: 'Order must be in produced state to mark as invoiced' });
+    }
+
+    const updatedOrder = await prisma.production_orders.update({
+      where: { id },
+      data: { state: 'invoiced' }
+    });
+
+    res.json(updatedOrder);
+  } catch (error) {
+    console.error('Error marking order as invoiced:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/production-orders/:id/mark-shipped', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await prisma.production_orders.findUnique({
+      where: { id }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Production order not found' });
+    }
+
+    if (order.state !== 'invoiced') {
+      return res.status(409).json({ error: 'Order must be in invoiced state to mark as shipped' });
+    }
+
+    const updatedOrder = await prisma.production_orders.update({
+      where: { id },
+      data: {
+        state: 'shipped',
+        archived_at: new Date()
+      }
+    });
+
+    res.json(updatedOrder);
+  } catch (error) {
+    console.error('Error marking order as shipped:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
