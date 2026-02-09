@@ -356,3 +356,35 @@ export async function advanceLineStage(lineId: string): Promise<ProductionOrderL
 
   return response.json();
 }
+
+export async function markOrderAsInvoiced(orderId: string): Promise<ProductionOrder> {
+  const response = await fetch(`${API_BASE_URL}/api/production-orders/${orderId}/mark-invoiced`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to mark order as invoiced');
+  }
+
+  return response.json();
+}
+
+export async function markOrderAsShipped(orderId: string): Promise<ProductionOrder> {
+  const response = await fetch(`${API_BASE_URL}/api/production-orders/${orderId}/mark-shipped`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to mark order as shipped');
+  }
+
+  return response.json();
+}

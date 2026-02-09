@@ -23,7 +23,9 @@ import {
   updateAnomaly,
   deleteAnomaly,
   importSalesLines,
-  advanceLineStage
+  advanceLineStage,
+  markOrderAsInvoiced,
+  markOrderAsShipped
 } from '../api';
 
 export default function ProductionOrderDetail() {
@@ -40,6 +42,8 @@ export default function ProductionOrderDetail() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [advancingLineId, setAdvancingLineId] = useState<string | null>(null);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const [commercialActionLoading, setCommercialActionLoading] = useState(false);
+  const [commercialActionError, setCommercialActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -100,6 +104,36 @@ export default function ProductionOrderDetail() {
       setTimeout(() => setAdvanceError(null), 5000);
     } finally {
       setAdvancingLineId(null);
+    }
+  }
+
+  async function handleMarkAsInvoiced() {
+    try {
+      setCommercialActionLoading(true);
+      setCommercialActionError(null);
+      await markOrderAsInvoiced(order!.id);
+      if (id) await loadOrder(id);
+      setSuccessMessage('Order marked as invoiced');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err) {
+      setCommercialActionError(err instanceof Error ? err.message : 'Failed to mark as invoiced');
+    } finally {
+      setCommercialActionLoading(false);
+    }
+  }
+
+  async function handleMarkAsShipped() {
+    try {
+      setCommercialActionLoading(true);
+      setCommercialActionError(null);
+      await markOrderAsShipped(order!.id);
+      if (id) await loadOrder(id);
+      setSuccessMessage('Order shipped');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err) {
+      setCommercialActionError(err instanceof Error ? err.message : 'Failed to mark as shipped');
+    } finally {
+      setCommercialActionLoading(false);
     }
   }
 
@@ -203,6 +237,49 @@ export default function ProductionOrderDetail() {
               <label className="block text-sm font-medium text-gray-500 mb-1">End Estimated</label>
               <p className="text-gray-900">{formatDate(order.date_end_estimated)}</p>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Commercial</h2>
+
+          {commercialActionError && (
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+              {commercialActionError}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            {order.state === 'invoiced' && (
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded">
+                INVOICED
+              </span>
+            )}
+            {order.state === 'shipped' && (
+              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded">
+                SHIPPED
+              </span>
+            )}
+
+            {order.state === 'produced' && (
+              <button
+                onClick={handleMarkAsInvoiced}
+                disabled={commercialActionLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {commercialActionLoading ? 'Processing...' : 'Mark as Invoiced'}
+              </button>
+            )}
+
+            {order.state === 'invoiced' && (
+              <button
+                onClick={handleMarkAsShipped}
+                disabled={commercialActionLoading}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {commercialActionLoading ? 'Processing...' : 'Mark as Shipped'}
+              </button>
+            )}
           </div>
         </div>
 
