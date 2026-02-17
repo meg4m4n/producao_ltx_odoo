@@ -12,6 +12,14 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+async function isOrderLocked(orderId) {
+  const order = await prisma.production_orders.findUnique({
+    where: { id: orderId },
+    select: { state: true }
+  });
+  return order && (order.state === 'invoiced' || order.state === 'shipped');
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -70,7 +78,7 @@ app.post('/api/production-orders', async (req, res) => {
 
 app.get('/api/production-orders', async (req, res) => {
   try {
-    const { state, service_current, q } = req.query;
+    const { state, service_current, q, include_archived } = req.query;
 
     const where = {};
 
@@ -88,6 +96,10 @@ app.get('/api/production-orders', async (req, res) => {
         { sale_ref: { contains: q, mode: 'insensitive' } },
         { customer_name: { contains: q, mode: 'insensitive' } }
       ];
+    }
+
+    if (include_archived !== 'true') {
+      where.archived_at = null;
     }
 
     const orders = await prisma.production_orders.findMany({
@@ -144,6 +156,11 @@ app.get('/api/production-orders/:id', async (req, res) => {
 app.patch('/api/production-orders/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (await isOrderLocked(id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const {
       sale_ref,
       customer_name,
@@ -312,6 +329,19 @@ app.post('/api/production-orders/:id/lines', async (req, res) => {
 app.patch('/api/production-order-lines/:lineId', async (req, res) => {
   try {
     const { lineId } = req.params;
+
+    const existingLine = await prisma.production_order_lines.findUnique({
+      where: { id: lineId }
+    });
+
+    if (!existingLine) {
+      return res.status(404).json({ error: 'Production order line not found' });
+    }
+
+    if (await isOrderLocked(existingLine.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const {
       article_ref,
       color,
@@ -375,6 +405,10 @@ app.delete('/api/production-order-lines/:lineId', async (req, res) => {
       return res.status(404).json({ error: 'Production order line not found' });
     }
 
+    if (await isOrderLocked(line.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const productionOrderId = line.production_order_id;
 
     await prisma.production_order_lines.delete({
@@ -403,6 +437,10 @@ app.post('/api/production-order-lines/:lineId/advance', async (req, res) => {
 
     if (!line) {
       return res.status(404).json({ error: 'Production order line not found' });
+    }
+
+    if (await isOrderLocked(line.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
     }
 
     const blockingAnomaly = await prisma.production_anomalies.findFirst({
@@ -604,6 +642,10 @@ app.post('/api/production-order-lines/:lineId/sizes', async (req, res) => {
       return res.status(404).json({ error: 'Production order line not found' });
     }
 
+    if (await isOrderLocked(line.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const finalQtyToProduce = qty_to_produce !== undefined ? qty_to_produce : qty_ordered;
 
     await prisma.production_order_line_sizes.upsert({
@@ -660,6 +702,19 @@ app.patch('/api/production-order-line-sizes/:sizeId', async (req, res) => {
     const { sizeId } = req.params;
     const { size, qty_ordered, qty_to_produce, qty_produced, qty_defect } = req.body;
 
+    const existingSize = await prisma.production_order_line_sizes.findUnique({
+      where: { id: sizeId },
+      include: { production_order_line: true }
+    });
+
+    if (!existingSize) {
+      return res.status(404).json({ error: 'Size record not found' });
+    }
+
+    if (await isOrderLocked(existingSize.production_order_line.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
+
     const data = {};
 
     if (size !== undefined) data.size = size;
@@ -689,6 +744,19 @@ app.patch('/api/production-order-line-sizes/:sizeId', async (req, res) => {
 app.delete('/api/production-order-line-sizes/:sizeId', async (req, res) => {
   try {
     const { sizeId } = req.params;
+
+    const existingSize = await prisma.production_order_line_sizes.findUnique({
+      where: { id: sizeId },
+      include: { production_order_line: true }
+    });
+
+    if (!existingSize) {
+      return res.status(404).json({ error: 'Size record not found' });
+    }
+
+    if (await isOrderLocked(existingSize.production_order_line.production_order_id)) {
+      return res.status(409).json({ error: 'Order is invoiced/shipped and locked' });
+    }
 
     await prisma.production_order_line_sizes.delete({
       where: { id: sizeId }

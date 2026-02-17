@@ -42,6 +42,7 @@ model production_orders {
   date_delivery_requested  DateTime?
   date_start_plan          DateTime?
   date_end_estimated       DateTime?
+  archived_at              DateTime?
   created_at               DateTime                @default(now())
   updated_at               DateTime                @updatedAt
 
